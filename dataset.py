@@ -1,30 +1,27 @@
-# ========================================
-# 文件5: dataset.py - PyTorch数据集
-# ========================================
 """
-PyTorch数据集定义
+PyTorch数据集定义 - SimCSE版本
+核心变更：不再返回翻译文本，仅返回原始文本
+SimCSE 在 Trainer 中通过两次 forward 生成正样本对
 """
 import torch
 from torch.utils.data import Dataset
 
 
 class CrossLingualDataset(Dataset):
-    """跨语言情感分析数据集"""
+    """跨语言情感分析数据集 - SimCSE版本"""
 
-    def __init__(self, data, tokenizer, max_length, is_train=True):
+    def __init__(self, data, tokenizer, max_length):
         """
         初始化数据集
 
         Args:
-            data: 数据字典
+            data: 数据字典，包含 'text' 和 'label'
             tokenizer: XLM-RoBERTa tokenizer
             max_length: 最大序列长度
-            is_train: 是否为训练集
         """
         self.data = data
         self.tokenizer = tokenizer
         self.max_length = max_length
-        self.is_train = is_train
 
     def __len__(self):
         """返回数据集大小"""
@@ -38,40 +35,19 @@ class CrossLingualDataset(Dataset):
             idx: 样本索引
 
         Returns:
-            样本字典
+            样本字典，包含 input_ids, attention_mask, label
         """
+        text = self.data['text'][idx]
         label = self.data['label'][idx]
 
-        if self.is_train:
-            # 训练模式：返回三组文本（原文、掩码、翻译）
-            original_text = self.data['original_text'][idx]
-            masked_text = self.data['masked_text'][idx]
-            translated_text = self.data['translated_text'][idx]
+        # Tokenize文本
+        encoding = self._tokenize(text)
 
-            # Tokenize三个文本
-            original_encoding = self._tokenize(original_text)
-            masked_encoding = self._tokenize(masked_text)
-            translated_encoding = self._tokenize(translated_text)
-
-            return {
-                'original_input_ids': original_encoding['input_ids'],
-                'original_attention_mask': original_encoding['attention_mask'],
-                'masked_input_ids': masked_encoding['input_ids'],
-                'masked_attention_mask': masked_encoding['attention_mask'],
-                'translated_input_ids': translated_encoding['input_ids'],
-                'translated_attention_mask': translated_encoding['attention_mask'],
-                'label': torch.tensor(label, dtype=torch.long)
-            }
-        else:
-            # 测试模式：只返回一组文本
-            text = self.data['text'][idx]
-            encoding = self._tokenize(text)
-
-            return {
-                'input_ids': encoding['input_ids'],
-                'attention_mask': encoding['attention_mask'],
-                'label': torch.tensor(label, dtype=torch.long)
-            }
+        return {
+            'input_ids': encoding['input_ids'],
+            'attention_mask': encoding['attention_mask'],
+            'label': torch.tensor(label, dtype=torch.long)
+        }
 
     def _tokenize(self, text):
         """
