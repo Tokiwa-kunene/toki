@@ -1,7 +1,9 @@
 """
-数据预处理模块 - SimCSE版本
-负责数据加载和筛选
-核心变更：完全移除翻译相关代码，SimCSE 不需要翻译数据
+主要作用：
+将数据从csv导出到python中（转化为dataframe（df）格式）
+根据需求对数据进行筛选和删除
+打包成tensor格式的文件，以便其他部分读取和处理
+
 """
 import pandas as pd
 from sklearn.model_selection import train_test_split
@@ -33,11 +35,11 @@ class DataPreprocessor:
         print("步骤1: 加载数据")
         print("=" * 50)
 
-        # 读取训练集
+        # 读取训练集，        注：df为DataFrame格式，类似一个python内部的大型Excel
         print(f"\n读取训练集: {self.config.TRAIN_DATA_PATH}")
         if not os.path.exists(self.config.TRAIN_DATA_PATH):
             raise FileNotFoundError(f"训练集文件不存在: {self.config.TRAIN_DATA_PATH}")
-        train_df = pd.read_csv(self.config.TRAIN_DATA_PATH)
+        train_df = pd.read_csv(self.config.TRAIN_DATA_PATH) #通过panda库将csv文件转换为py可读的df文件
         print(f"  ✓ 原始训练数据: {len(train_df)} 条")
 
         # 读取验证集
@@ -61,41 +63,68 @@ class DataPreprocessor:
             if missing_cols:
                 raise ValueError(f"{df_name}缺少必需的列: {missing_cols}")
 
-        # 定义标签转换函数
-        def convert_label(stars):
-            if stars in [1, 2]:
-                return 0  # Negative
-            elif stars in [4, 5]:
-                return 1  # Positive
-            else:
-                return -1  # 需要丢弃
+        if self.config.USE_THREE_CLASSES:
+            # 三分类逻辑
+            print(">>> 启用三分类模式: 保留3星数据 (Label: 0=负面, 1=中性, 2=正面)")
+
+            #将star转换为数字
+            def convert_label(stars):
+                if stars in [1, 2]:
+                    return 0  # Negative
+                elif stars == 3:
+                    return 1  # Neutral (新增)
+                elif stars in [4, 5]:
+                    return 2  # Positive (原为1，现改为2)
+                else:
+                    return -1
+        else:
+            # 二分类逻辑 (原有逻辑)
+            print(">>> 启用二分类模式: 丢弃3星数据 (Label: 0=负面, 1=正面)")
+            def convert_label(stars):
+                if stars in [1, 2]:
+                    return 0  # Negative
+                elif stars in [4, 5]:
+                    return 1  # Positive
+                else:
+                    return -1  # 3星及其他丢弃
+
+        # 获取语言显示名称
+        train_lang_name = self.config.get_lang_name(self.config.TRAIN_LANG)
+        valid_lang_name = self.config.get_lang_name(self.config.VALID_LANG)
+        test_lang_name = self.config.get_lang_name(self.config.TEST_LANG)
 
         print("\n" + "=" * 50)
-        print("步骤1.1: 处理训练集")
+        print(f"步骤1.1: 处理训练集 (筛选{train_lang_name})")
         print("=" * 50)
-        # 处理训练集（筛选英语）
-        train_df = train_df[train_df['language'] == 'en'].copy()
+        # === 动态筛选 ===
+        train_df = train_df[train_df['language'] == self.config.TRAIN_LANG].copy()
+        #[train_df['language'] == self.config.TRAIN_LANG]：判断df中lang列中的值是否与config设置相同，同为True不同为False
+        #train_df[上述代码]:保留[]内为True的行，删去False的行
+        #.copy()的作用：开辟新的储存空间，储存处理后的df文件，并删掉原先的df文件
+
         train_df['label'] = train_df['stars'].apply(convert_label)
         train_df = train_df[train_df['label'] != -1].reset_index(drop=True)
-        print(f"  筛选英语并转换标签后: {len(train_df)} 条")
+        print(f"  筛选{train_lang_name}并转换标签后: {len(train_df)} 条")
 
         print("\n" + "=" * 50)
-        print("步骤1.2: 处理验证集")
+        print(f"步骤1.2: 处理验证集 (筛选{valid_lang_name})")
         print("=" * 50)
-        # 处理验证集（筛选英语）
-        valid_df = valid_df[valid_df['language'] == 'en'].copy()
+        # === 动态筛选 ===
+        valid_df = valid_df[valid_df['language'] == self.config.VALID_LANG].copy()
+
         valid_df['label'] = valid_df['stars'].apply(convert_label)
         valid_df = valid_df[valid_df['label'] != -1].reset_index(drop=True)
-        print(f"  筛选英语并转换标签后: {len(valid_df)} 条")
+        print(f"  筛选{valid_lang_name}并转换标签后: {len(valid_df)} 条")
 
         print("\n" + "=" * 50)
-        print("步骤1.3: 处理测试集")
+        print(f"步骤1.3: 处理测试集 (筛选{test_lang_name})")
         print("=" * 50)
-        # 处理测试集（筛选日语）
-        test_df = test_df[test_df['language'] == 'ja'].copy()
+        # === 动态筛选 ===
+        test_df = test_df[test_df['language'] == self.config.TEST_LANG].copy()
+
         test_df['label'] = test_df['stars'].apply(convert_label)
         test_df = test_df[test_df['label'] != -1].reset_index(drop=True)
-        print(f"  筛选日语并转换标签后: {len(test_df)} 条")
+        print(f"  筛选{test_lang_name}并转换标签后: {len(test_df)} 条")
 
         # 如果使用小规模数据集，进行采样
         if self.config.USE_SMALL_DATASET:
@@ -204,9 +233,10 @@ class DataPreprocessor:
 
         # 构建训练数据（SimCSE：只需要原始文本）
         train_data = {
-            'text': train_df['review_body'].tolist(),
+            'text': train_df['review_body'].tolist(),   #tolist()使df格式中的某一列强行提取出来变为list格式，并保存在字典中
             'label': train_df['label'].tolist()
         }
+        #于是根据df文件生成了一个包含两个list的字典
 
         # 构建验证数据
         valid_data = {

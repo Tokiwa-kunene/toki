@@ -8,6 +8,29 @@ import os
 
 
 class Config:
+
+    # ============ 任务类型开关 (新增) ============
+    # True: 三分类 (负面/中性/正面) -> 保留3星数据
+    # False: 二分类 (负面/正面) -> 丢弃3星数据
+    USE_THREE_CLASSES = False
+
+    # ============ 语言配置 (新增) ============
+    # 在这里指定每个数据集使用的语言代码
+    # 可选值取决于你的CSV文件 'language' 列包含哪些语言 (例如: 'en', 'ja', 'zh', 'es', 'de', 'fr')
+    TRAIN_LANG = 'en'  # 训练集语言
+    VALID_LANG = 'ja'  # 验证集语言
+    TEST_LANG = 'ja'  # 测试集语言
+
+    # 语言代码到显示名称的映射
+    LANG_MAP = {
+        'en': '英语',
+        'ja': '日语',
+        'zh': '中文',
+        'es': '西班牙语',
+        'fr': '法语',
+        'de': '德语'
+    }
+
     """全局配置类"""
 
     # ============ 路径配置 ============
@@ -18,9 +41,11 @@ class Config:
 
     # 模型路径
     MODEL_PATH = './Xlm-roberta-base'
+    #bert-base-multilingual-cased
+    #Xlm-roberta-base
 
     # 输出路径
-    OUTPUT_DIR = '/kaggle/working/'
+    OUTPUT_DIR = './outputs'
     #/kaggle/working/
     CHECKPOINT_DIR = os.path.join(OUTPUT_DIR, 'checkpoints')
     LOG_DIR = os.path.join(OUTPUT_DIR, 'logs')
@@ -30,9 +55,9 @@ class Config:
     USE_SMALL_DATASET = True
 
     # 每个数据集使用的样本数量
-    TRAIN_SAMPLE_SIZE = 10000
-    VALID_SAMPLE_SIZE = 2000
-    TEST_SAMPLE_SIZE = 2000
+    TRAIN_SAMPLE_SIZE = 500
+    VALID_SAMPLE_SIZE = 100
+    TEST_SAMPLE_SIZE = 100
 
     # 是否进行分层采样
     STRATIFIED_SAMPLING = True
@@ -41,37 +66,23 @@ class Config:
     MAX_LENGTH = 128
 
     # ============ 模型参数 ============
-    NUM_CLASSES = 2  # 二分类：正面/负面
+    NUM_CLASSES = 3  if USE_THREE_CLASSES else 2
     PROJECTION_DIM = 128  # 对比学习投影维度
 
     # ============ SimCSE 关键配置 ============
     # Dropout 是 SimCSE 的核心！利用 Dropout 生成正样本对
     DROPOUT_RATE = 0.1
     # XLM-RoBERTa 默认 dropout，SimCSE 依赖此设置
-
-    # ============ 训练参数 ============
     BATCH_SIZE = 32
     NUM_EPOCHS = 5  # SimCSE 通常收敛较快
     LEARNING_RATE = 2e-5
-
-    # ============ 损失函数权重配置 ============
-    # 对比学习损失的权重系数 alpha ∈ [0, 1]
-    ALPHA = 0.3
-
-    # 温度参数（用于对比学习）
+    ALPHA = 0.05            #对比学习loss的比重
     TEMPERATURE = 0.07
-
-    # 梯度裁剪
     MAX_GRAD_NORM = 1.0
-
-    # 学习率预热比例
     WARMUP_RATIO = 0.1
-
-    # ============ 性能优化配置 ============
     NUM_WORKERS = 4
     PIN_MEMORY = True
     PERSISTENT_WORKERS = False
-
     # ============ Checkpoint 保存策略 ============
     # 重要变更：防止磁盘爆满
     SAVE_FREQ = 999  # 设置为很大的数，实际上只在 is_best 时保存
@@ -84,7 +95,12 @@ class Config:
     LOG_FREQ = 10
 
     @classmethod
-    def create_dirs(cls):
+    def get_lang_name(cls, lang_code):
+        """获取语言的显示名称"""
+        return cls.LANG_MAP.get(lang_code, lang_code)
+
+    @classmethod
+    def create_dirs(cls):       #classmethod是一个装饰器，表明 create_dirs 是一个类方法，可以不实例化config直接调用
         """创建必要的目录"""
         os.makedirs(cls.OUTPUT_DIR, exist_ok=True)
         os.makedirs(cls.CHECKPOINT_DIR, exist_ok=True)
@@ -96,6 +112,15 @@ class Config:
         print("\n" + "=" * 70)
         print("SimCSE-ABSA 配置")
         print("=" * 70)
+        # 打印语言设置 (新增)
+        task_type = "三分类 (负面/中性/正面)" if cls.USE_THREE_CLASSES else "二分类 (负面/正面)"
+        print(f"任务模式: {task_type}")
+        print(f"类别数量: {cls.NUM_CLASSES}")
+
+        print(f"语言设置:")
+        print(f"  训练集: {cls.get_lang_name(cls.TRAIN_LANG)} ({cls.TRAIN_LANG})")
+        print(f"  验证集: {cls.get_lang_name(cls.VALID_LANG)} ({cls.VALID_LANG})")
+        print(f"  测试集: {cls.get_lang_name(cls.TEST_LANG)} ({cls.TEST_LANG})")
 
         # 数据集配置
         if cls.USE_SMALL_DATASET:
